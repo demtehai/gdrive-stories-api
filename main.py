@@ -1,71 +1,65 @@
-import os
-import json
-import io
-from flask import Flask, request, jsonify, send_file, abort
-from datetime import datetime, timedelta
+from flask import Flask, request, send_file, jsonify
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+from datetime import datetime, timedelta
+from io import BytesIO
+import os
+import json
 
 app = Flask(__name__)
 
-# Авторизация
-SCOPES = ['https://www.googleapis.com/auth/drive']
+# Load credentials from environment variable
 credentials_info = json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON"))
 credentials = service_account.Credentials.from_service_account_info(
-    credentials_info, scopes=SCOPES
+    credentials_info,
+    scopes=["https://www.googleapis.com/auth/drive.readonly"]
 )
-drive_service = build('drive', 'v3', credentials=credentials)
-
-# ID папки с файлами
-FOLDER_ID = os.getenv("GDRIVE_FOLDER")
+drive_service = build("drive", "v3", credentials=credentials)
+FOLDER_ID = os.getenv("GDRIVE_FOLDER_ID")
 
 @app.route("/")
-def index():
+def home():
     return "✅ GDrive Stories API is working."
 
 @app.route("/stories")
-def get_stories():
+def list_stories():
     try:
-        cutoff_time = (datetime.utcnow() - timedelta(hours=48)).isoformat("T") + "Z"
-
+        cutoff = (datetime.utcnow() - timedelta(hours=48)).isoformat() + "Z"
+        query = f"'{FOLDER_ID}' in parents and (mimeType contains 'image/' or mimeType contains 'video/') and modifiedTime > '{cutoff}'"
         results = drive_service.files().list(
-            q=f"'{FOLDER_ID}' in parents and trashed = false and modifiedTime > '{cutoff_time}'",
+            q=query,
             fields="files(id, name, mimeType, modifiedTime)",
             orderBy="modifiedTime desc"
         ).execute()
         files = results.get("files", [])
-
-        # добавляем прямую ссылку на скачивание
-        for file in files:
-            file["webContentLink"] = f"https://drive.google.com/uc?id={file['id']}&export=download"
-
+        for f in files:
+            f["webContentLink"] = f"https://drive.google.com/uc?id={f['id']}&export=download"
         return jsonify(files)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route("/media")
-def get_media():
+def media():
     file_id = request.args.get("id")
     if not file_id:
-        return abort(400, "Missing file id")
+        return "Missing file ID", 400
 
     try:
-        request_drive = drive_service.files().get_media(fileId=file_id)
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request_drive)
+        request_media = drive_service.files().get_media(fileId=file_id)
+        fh = BytesIO()
+        downloader = MediaIoBaseDownload(fh, request_media)
         done = False
         while not done:
-            _, done = downloader.next_chunk()
+            status, done = downloader.next_chunk()
 
         fh.seek(0)
-        file_meta = drive_service.files().get(fileId=file_id, fields="mimeType, name").execute()
-        mime = file_meta["mimeType"]
-        name = file_meta["name"]
-
-        return send_file(fh, mimetype=mime, download_name=name)
+        file_metadata = drive_service.files().get(fileId=file_id, fields="mimeType, name").execute()
+        mime_type = file_metadata["mimeType"]
+        name = file_metadata["name"]
+        return send_file(fh, mimetype=mime_type, download_name=name)
     except Exception as e:
-        return abort(500, f"Ошибка загрузки файла: {str(e)}")
+        return f"Error: {str(e)}", 500
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
