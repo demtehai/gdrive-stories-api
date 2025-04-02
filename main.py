@@ -24,6 +24,10 @@ FOLDER_ID = os.getenv("GDRIVE_FOLDER_ID")
 def home():
     return "✅ GDrive Stories API is working."
 
+@app.route("/ping")
+def ping():
+    return "pong", 200
+
 @app.route("/stories")
 def list_stories():
     try:
@@ -65,14 +69,3 @@ def media():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
-
-from flask import Flask
-
-
-
-@app.route("/ping")
-def ping():
-    return "pong", 200
-
-# Остальной твой код (другие маршруты, endpoints и логика)
-
