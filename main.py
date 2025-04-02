@@ -1,4 +1,5 @@
 from flask import Flask, request, send_file, jsonify
+from flask_cors import CORS
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
@@ -8,8 +9,9 @@ import os
 import json
 
 app = Flask(__name__)
+CORS(app)  # ✅ Разрешаем CORS
 
-# Load credentials from environment variable
+# Авторизация
 credentials_info = json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON"))
 credentials = service_account.Credentials.from_service_account_info(
     credentials_info,
